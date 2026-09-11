@@ -1,0 +1,143 @@
+name: Build Global Land + Cropped Waterways Layers
+
+# Builds both the "land" and "cropped-waterways" world-covering PMTiles
+# layers together via TileAlchemist's reusable pipeline (profile and
+# output_basename passed as comma-separated lists), sharing one
+# prepare-shards walk and one fetch per worker across both profiles instead
+# of each profile re-fetching the same OpenFreeMap source tile bytes
+# independently.
+#
+# The pipeline lives in another repository and is called cross-repo, which
+# is its documented, supported contract. It never checks this repository
+# out: the profiles reach it as the `profiles` artifact uploaded below, so
+# `./land.py` there resolves inside that artifact. See TileAlchemist's
+# docs/ARCHITECTURE.md "Getting the profiles in" and "Publishing".
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_zoom:
+        description: "Min zoom for both layers (default: 0)."
+        required: false
+        default: "0"
+      max_zoom:
+        description: "Max zoom for both layers (default: 14)."
+        required: false
+        default: "14"
+  schedule:
+    - cron: "0 0 1 * *"
+
+env:
+  # One place to bump the pipeline version. A tag or SHA rather than a
+  # branch: the pipeline pins its own checkout to the commit of the
+  # workflow file being run, so this ref decides which TileAlchemist
+  # actually builds the tiles.
+  TILEALCHEMIST_REF: main
+
+jobs:
+  # Both profiles are single self-contained files (their dependencies live
+  # in their own PEP 723 blocks, which the pipeline reads), so this is the
+  # whole handover.
+  profiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: profiles
+          path: |
+            land.py
+            cropped_waterways.py
+
+  build:
+    needs: profiles
+    uses: foxandfeature/tilealchemist/.github/workflows/_pipeline.yml@main
+    with:
+      profile: ./land.py,./cropped_waterways.py
+      profile_artifact: profiles
+      output_basename: land,cropped-waterways
+      min_zoom: ${{ inputs.min_zoom || '0' }}
+      max_zoom: ${{ inputs.max_zoom || '14' }}
+      attribution: '<a href="https://github.com/foxandfeature/tilealchemist">TileAlchemist</a> &middot; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+
+  publish-release-land:
+    needs: build
+    uses: foxandfeature/tilealchemist/.github/workflows/_publish-release.yml@main
+    permissions:
+      contents: write
+    with:
+      output_basename: land
+      tag: land-latest
+      title: "Global land layer"
+      min_zoom: ${{ inputs.min_zoom || '0' }}
+      max_zoom: ${{ inputs.max_zoom || '14' }}
+
+  publish-release-cropped-waterways:
+    needs: build
+    uses: foxandfeature/tilealchemist/.github/workflows/_publish-release.yml@main
+    permissions:
+      contents: write
+    with:
+      output_basename: cropped-waterways
+      tag: cropped-waterways-latest
+      title: "Global cropped waterways layer"
+      min_zoom: ${{ inputs.min_zoom || '0' }}
+      max_zoom: ${{ inputs.max_zoom || '14' }}
+
+  # B2 lives here rather than in TileAlchemist, as a plain matrixed job
+  # rather than a reusable workflow. That is the whole point of it being
+  # here: a reusable workflow's `environment:` resolves against the repo
+  # owning the *workflow file*, so a public reusable B2 job would hand its
+  # owner's credentials to any repository that called it, and needed a
+  # `github.repository ==` guard to prevent that. A job in the repo that
+  # owns the credentials needs no such guard - only the `b2-publish`
+  # environment's own required-reviewer approval, configured in this
+  # repository's Settings.
+  publish-b2:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: b2-publish
+    strategy:
+      fail-fast: false
+      matrix:
+        output_basename: [land, cropped-waterways]
+    steps:
+      - name: Download the merged layer
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.output_basename }}-pmtiles
+
+      - name: Install B2 CLI
+        run: pip install "b2>=4,<5"
+
+      - name: Upload to Backblaze B2
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET_NAME: ${{ vars.B2_BUCKET_NAME }}
+          OUTPUT_BASENAME: ${{ matrix.output_basename }}
+        run: |
+          FILE="${OUTPUT_BASENAME}.pmtiles"
+          # Keep the redirect: `b2 account authorize` prints the full
+          # account_info JSON on success, including a live accountAuthToken.
+          # It goes through the CLI's `enforce_output=True`, so --quiet does
+          # not suppress it, and GitHub's secret masking only redacts exact
+          # literal matches of declared secrets, so that derived token is not
+          # masked and would land in the run log verbatim. Errors still
+          # surface via stderr and the exit code.
+          b2 account authorize "$B2_APPLICATION_KEY_ID" "$B2_APPLICATION_KEY" >/dev/null
+          b2 file upload "$B2_BUCKET_NAME" "$FILE" "$FILE"
+
+          # `b2 file upload` adds a new version without hiding the one it
+          # replaces, and the bucket's "keep only the last version" lifecycle
+          # rule only prunes versions that are already hidden - so it would
+          # never fire and old versions would pile up forever. Prune here
+          # instead, and only now that the new version is live, so the public
+          # URL never 404s in between.
+          old_file_ids=$(
+            b2 ls --json --versions "b2://$B2_BUCKET_NAME/$FILE" \
+              | jq -r 'sort_by(.uploadTimestamp) | .[:-1][].fileId'
+          )
+          for file_id in $old_file_ids; do
+            b2 rm "b2id://$file_id"
+          done
