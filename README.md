@@ -1,14 +1,14 @@
 # TileAlchemist Standard Profiles
 
 The `land` and `cropped-waterways` global PMTiles layers: two
-[TileAlchemist](https://github.com/foxandfeature/tilealchemist) profiles,
+[TileAlchemist](https://github.com/tilelab/tilealchemist) profiles,
 plus the workflow that builds and publishes them every month.
 
 TileAlchemist itself is the pipeline — fetching, sharding, merging,
 publishing — and ships no profiles of its own. This repository is one
 consumer of it, and doubles as a worked example of the cross-repo path
 described in TileAlchemist's
-[`docs/PROFILES.md`](https://github.com/foxandfeature/tilealchemist/blob/main/docs/PROFILES.md).
+[`docs/PROFILES.md`](https://github.com/tilelab/tilealchemist/blob/main/docs/PROFILES.md).
 
 Both are built from [Protomaps'](https://protomaps.com) daily planet
 basemap builds.
@@ -21,7 +21,7 @@ basemap builds.
 Neither profile names a layer or an attribute. Each asks for a *feature
 set* — `SURFACE_WATER`, `WATERWAYS` — and whichever schema the source
 declares answers it (see `TileSchema` in TileAlchemist's
-[`docs/PROFILES.md`](https://github.com/foxandfeature/tilealchemist/blob/main/docs/PROFILES.md)),
+[`docs/PROFILES.md`](https://github.com/tilelab/tilealchemist/blob/main/docs/PROFILES.md)),
 so the same two files produce the same two layers from an OpenMapTiles-schema
 provider as from Protomaps. Only the `source:` line in the workflow changes.
 
@@ -59,8 +59,8 @@ they're actually on land. See it combined with `land` in
 Finished PMTiles files are published on every run; you don't need to run
 the pipeline yourself just to use them. Preview a profile's output directly
 in Maputnik:
-[`land`](https://maplibre.org/maputnik/?style=https://raw.githubusercontent.com/foxandfeature/tilealchemist-standardprofiles/main/examples/land.json),
-[`cropped-waterways`](https://maplibre.org/maputnik/?style=https://raw.githubusercontent.com/foxandfeature/tilealchemist-standardprofiles/main/examples/cropped-waterways.json).
+[`land`](https://maplibre.org/maputnik/?style=https://raw.githubusercontent.com/tilelab/tilealchemist-standardprofiles/main/examples/land.json),
+[`cropped-waterways`](https://maplibre.org/maputnik/?style=https://raw.githubusercontent.com/tilelab/tilealchemist-standardprofiles/main/examples/cropped-waterways.json).
 
 Each layer carries its attribution in its own metadata, so a MapLibre style
 pointing at it through the
@@ -82,7 +82,7 @@ licence to the credit it carries in. The provider credited in a built layer
 is therefore always the provider whose bytes went into it, and a run that
 can't state what its output credits fails rather than publishing an
 unattributed layer — see TileAlchemist's
-[`docs/ARCHITECTURE.md`](https://github.com/foxandfeature/tilealchemist/blob/main/docs/ARCHITECTURE.md)
+[`docs/ARCHITECTURE.md`](https://github.com/tilelab/tilealchemist/blob/main/docs/ARCHITECTURE.md)
 "Source attribution".
 
 Nothing about that has to be repeated in your style; pointing a source at
@@ -112,8 +112,8 @@ const map = new maplibregl.Map({
 ```
 
 Or grab a file directly from its GitHub release, tagged `<profile>-latest`
-(e.g. [`land-latest`](https://github.com/foxandfeature/tilealchemist-standardprofiles/releases/tag/land-latest),
-[`cropped-waterways-latest`](https://github.com/foxandfeature/tilealchemist-standardprofiles/releases/tag/cropped-waterways-latest)):
+(e.g. [`land-latest`](https://github.com/tilelab/tilealchemist-standardprofiles/releases/tag/land-latest),
+[`cropped-waterways-latest`](https://github.com/tilelab/tilealchemist-standardprofiles/releases/tag/cropped-waterways-latest)):
 large builds ship as multiple parts, the release description has a
 one-line `gh release download` command that reassembles them.
 
@@ -126,7 +126,7 @@ For every tile in the `min_zoom`..`max_zoom` pyramid, `LandProfile.transform()`
 
 1. This tile's real surface water, via the `SURFACE_WATER` feature set
    (`tile.features(SURFACE_WATER)`, see `FeatureSet` in
-   [TileAlchemist's `docs/PROFILES.md`](https://github.com/foxandfeature/tilealchemist/blob/main/docs/PROFILES.md)). For `PROTOMAPS` this reads the
+   [TileAlchemist's `docs/PROFILES.md`](https://github.com/tilelab/tilealchemist/blob/main/docs/PROFILES.md)). For `PROTOMAPS` this reads the
    polygons out of the `water` layer — which holds polygons, lines and label
    points together — and drops tunnel water (a water polygon running through
    a tunnel isn't open water at the surface). `Tile.features()` hands each
@@ -157,7 +157,7 @@ buffered square: full land is the well-defined "nothing to subtract" case.
 (`cropped_waterways.py`), called by the inherited
 `Profile.transform_tile()`, reads this tile's waterway line features via
 `tile.features(WATERWAYS)` (already shapely, see `Tile` in
-[TileAlchemist's `docs/PROFILES.md`](https://github.com/foxandfeature/tilealchemist/blob/main/docs/PROFILES.md)). Protomaps has no waterway layer
+[TileAlchemist's `docs/PROFILES.md`](https://github.com/tilelab/tilealchemist/blob/main/docs/PROFILES.md)). Protomaps has no waterway layer
 as such — the `PROTOMAPS` schema answers `WATERWAYS` with the line
 geometries inside the same `water` layer the polygons came from, and the
 output layer's fields (`kind`, `name`, `layer`, …) are that schema's own,
